@@ -89,7 +89,7 @@ class BaseOptions extends _RequestConfig with OptionsMixin {
     Map<String, dynamic>? queryParameters,
     Map<String, dynamic>? extra,
     Map<String, dynamic>? headers,
-    ResponseType? responseType = ResponseType.json,
+    ResponseType? responseType,
     String? contentType,
     ValidateStatus? validateStatus,
     bool? receiveDataWhenStatusError,
@@ -584,7 +584,7 @@ class _RequestConfig {
     int? maxRedirects,
     bool? receiveDataWhenStatusError,
     ValidateStatus? validateStatus,
-    ResponseType? responseType,
+    this.responseType,
     this.requestEncoder,
     this.responseDecoder,
   }) {
@@ -610,7 +610,6 @@ class _RequestConfig {
         (int? status) {
           return status != null && status >= 200 && status < 300;
         };
-    this.responseType = responseType ?? ResponseType.json;
     if (!contentTypeInHeader) {
       this.contentType = contentType ?? Headers.jsonContentType;
     }
@@ -680,7 +679,7 @@ class _RequestConfig {
   ///
   /// If you want to receive the response data with  original bytes,
   /// that's to say the type of [Response.data] will be List<int>, use `bytes`
-  late ResponseType responseType;
+  late ResponseType? responseType;
 
   /// `validateStatus` defines whether the request is successful for a given
   /// HTTP response status code. If `validateStatus` returns `true` ,

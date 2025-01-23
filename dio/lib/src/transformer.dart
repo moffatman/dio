@@ -164,7 +164,7 @@ class DefaultTransformer extends Transformer {
       responseBody = utf8.decode(responseBytes, allowMalformed: true);
     }
     if (responseBody.isNotEmpty &&
-        options.responseType == ResponseType.json &&
+        (options.responseType ?? ResponseType.json) == ResponseType.json &&
         Transformer.isJsonMimeType(
             response.headers[Headers.contentTypeHeader]?.first)) {
       final callback = jsonDecodeCallback;
