@@ -184,11 +184,16 @@ class ErrorInterceptorHandler extends _BaseHandler {
   /// This will be considered a successful request!
   ///
   /// [response]: Response object to return.
-  void resolve(Response response) {
-    _completer.complete(InterceptorState<Response>(
-      response,
-      InterceptorResultType.resolve,
-    ));
+  void resolve(Response response,
+      [bool callFollowingResponseInterceptor = false]) {
+    _completer.complete(
+      InterceptorState<Response>(
+        response,
+        callFollowingResponseInterceptor
+            ? InterceptorResultType.resolveCallFollowing
+            : InterceptorResultType.resolve,
+      ),
+    );
     _processNextInQueue?.call();
   }
 

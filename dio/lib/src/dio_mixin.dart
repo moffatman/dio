@@ -611,18 +611,14 @@ abstract class DioMixin implements Dio {
 
     // Add response interceptors to request flow
     interceptors.forEach((Interceptor interceptor) {
-      var fun = interceptor is QueuedInterceptor
+      var responseFun = interceptor is QueuedInterceptor
           ? interceptor._handleResponse
           : interceptor.onResponse;
-      future = future.then(_responseInterceptorWrapper(fun));
-    });
-
-    // Add error handlers to request flow
-    interceptors.forEach((Interceptor interceptor) {
-      var fun = interceptor is QueuedInterceptor
+      var errorFun = interceptor is QueuedInterceptor
           ? interceptor._handleError
           : interceptor.onError;
-      future = future.catchError(_errorInterceptorWrapper(fun));
+      future = future.then(_responseInterceptorWrapper(responseFun))
+                     .catchError(_errorInterceptorWrapper(errorFun));
     });
 
     // Normalize errors, we convert error to the DioError
