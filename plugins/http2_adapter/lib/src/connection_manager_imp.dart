@@ -37,9 +37,11 @@ class _ConnectionManager implements ConnectionManager {
       on SocketException {
         transport.socket = null;
       }
-      if (transport.socket != null) {
+      final socket = transport.socket;
+      if (socket != null) {
         transport._onActiveStateChanged(true);
-        return ConnectionTask.fromSocket(Future.value(transport.socket), () {});
+        transport.socket = null; // Can't be used again
+        return ConnectionTask.fromSocket(Future.value(socket), () {});
       }
       transport._onActiveStateChanged(false);
       clientConfig = transport.clientConfig;
