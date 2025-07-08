@@ -26,7 +26,38 @@ class _ConnectionManager implements ConnectionManager {
       : _idleTimeout = idleTimeout ?? 1000;
 
   @override
-  Future<ClientTransportConnection> getConnection(
+  Future<ConnectionTask<Socket>> connectionFactory(Uri url, String? proxyHost, int? proxyPort) async {
+    final domain = '${url.host}:${url.port}';
+    ClientSetting? clientConfig;
+    final transport = _transportsMap[domain]?.transport;
+    if (transport is _ClientTransportConnectionWrapper1) {
+      try {
+        transport.socket?.address;
+      }
+      on SocketException {
+        transport.socket = null;
+      }
+      if (transport.socket != null) {
+        transport._onActiveStateChanged(true);
+        return ConnectionTask.fromSocket(Future.value(transport.socket), () {});
+      }
+      transport._onActiveStateChanged(false);
+      clientConfig = transport.clientConfig;
+    }
+    // Fallback to default factory
+    if (url.isScheme('https')) {
+      return await SecureSocket.startConnect(
+        url.host,
+        url.port,
+        context: clientConfig?.context,
+        onBadCertificate: clientConfig?.onBadCertificate
+      );
+    }
+    return await Socket.startConnect(url.host, url.port);
+  }
+
+  @override
+  Future<ClientTransportConnection?> getConnection(
       RequestOptions options) async {
     if (_closed) {
       throw Exception(
@@ -49,7 +80,11 @@ class _ConnectionManager implements ConnectionManager {
         var _ = _connectFutures.remove(domain);
       }
     }
-    return transportState.activeTransport;
+    final activeWrapper = transportState.activeTransport;
+    if (activeWrapper is _ClientTransportConnectionWrapper2) {
+      return activeWrapper.transport;
+    }
+    return null;
   }
 
   Future<_ClientTransportConnectionState> _connect(
@@ -60,33 +95,47 @@ class _ConnectionManager implements ConnectionManager {
     if (onClientCreate != null) {
       onClientCreate!(uri, clientConfig);
     }
-    late SecureSocket socket;
-    try {
-      // Create socket
-      socket = await SecureSocket.connect(
-        uri.host,
-        uri.port,
-        timeout: options.connectTimeout > 0
-            ? Duration(milliseconds: options.connectTimeout)
-            : null,
-        context: clientConfig.context,
-        onBadCertificate: clientConfig.onBadCertificate,
-        supportedProtocols: ['h2'],
-      );
-    } on SocketException catch (e) {
-      if (e.osError == null) {
-        if (e.message.contains('timed out')) {
-          throw DioError(
-            requestOptions: options,
-            error: 'Connecting timed out [${options.connectTimeout}ms]',
-            type: DioErrorType.connectTimeout,
-          );
+    _ClientTransportConnectionWrapper transport;
+    if (uri.isScheme('https')) {
+      late SecureSocket socket;
+      try {
+        // Create socket
+        socket = await SecureSocket.connect(
+          uri.host,
+          uri.port,
+          timeout: options.connectTimeout > 0
+              ? Duration(milliseconds: options.connectTimeout)
+              : null,
+          context: clientConfig.context,
+          onBadCertificate: clientConfig.onBadCertificate,
+          supportedProtocols: ['h2', 'http/1.1']
+        );
+      } on SocketException catch (e) {
+        if (e.osError == null) {
+          if (e.message.contains('timed out')) {
+            throw DioError(
+              requestOptions: options,
+              error: 'Connecting timed out [${options.connectTimeout}ms]',
+              type: DioErrorType.connectTimeout,
+            );
+          }
         }
+        rethrow;
       }
-      rethrow;
+      if (socket.selectedProtocol == 'h2') {
+        // HTTPS 2.0
+        transport = _ClientTransportConnectionWrapper2(ClientTransportConnection.viaSocket(socket));
+      }
+      else {
+        // HTTPS 1.x
+        transport = _ClientTransportConnectionWrapper1(clientConfig, domain, socket);
+      }
+    }
+    else {
+      // HTTP 1.x
+      transport = _ClientTransportConnectionWrapper1(clientConfig, domain, null);
     }
     // Config a ClientTransportConnection and save it
-    var transport = ClientTransportConnection.viaSocket(socket);
     var _transportState = _ClientTransportConnectionState(transport);
     transport.onActiveStateChanged = (bool isActive) {
       _transportState.isActive = isActive;
@@ -110,7 +159,8 @@ class _ConnectionManager implements ConnectionManager {
   void removeConnection(ClientTransportConnection transport) {
     _ClientTransportConnectionState? _transportState;
     _transportsMap.removeWhere((_, state) {
-      if (state.transport == transport) {
+      final otherTransport = state.transport;
+      if (otherTransport is _ClientTransportConnectionWrapper2 && otherTransport.transport == transport) {
         _transportState = state;
         return true;
       }
@@ -132,9 +182,9 @@ class _ConnectionManager implements ConnectionManager {
 class _ClientTransportConnectionState {
   _ClientTransportConnectionState(this.transport);
 
-  ClientTransportConnection transport;
+  _ClientTransportConnectionWrapper transport;
 
-  ClientTransportConnection get activeTransport {
+  _ClientTransportConnectionWrapper get activeTransport {
     isActive = true;
     latestIdleTimeStamp = DateTime.now().millisecondsSinceEpoch;
     return transport;
@@ -167,5 +217,49 @@ class _ClientTransportConnectionState {
       // if active
       _startTimer(callback, idleTimeout, idleTimeout);
     });
+  }
+}
+
+abstract class _ClientTransportConnectionWrapper {
+  bool get isOpen;
+  set onActiveStateChanged(void Function(bool) cb);
+  Future<void> finish();
+}
+
+class _ClientTransportConnectionWrapper1 extends _ClientTransportConnectionWrapper {
+  final ClientSetting clientConfig;
+  final String domain;
+  SecureSocket? socket;
+  void Function(bool) _onActiveStateChanged = (_) {};
+  _ClientTransportConnectionWrapper1(this.clientConfig, this.domain, this.socket) {
+    socket?.done.then((_) {
+      _onActiveStateChanged(false);
+      socket = null;
+    });
+  }
+  @override
+  bool get isOpen => socket != null;
+  @override
+  set onActiveStateChanged(cb) {
+    _onActiveStateChanged = cb;
+  }
+  @override
+  Future<void> finish() async {
+    final s = socket;
+    socket = null;
+    await s?.close();
+  }
+}
+
+class _ClientTransportConnectionWrapper2 extends _ClientTransportConnectionWrapper {
+  final ClientTransportConnection transport;
+  _ClientTransportConnectionWrapper2(this.transport);
+  @override
+  bool get isOpen => transport.isOpen;
+  @override
+  set onActiveStateChanged(Function(bool) cb) => transport.onActiveStateChanged = cb;
+  @override
+  Future<void> finish() async {
+    await transport.finish();
   }
 }

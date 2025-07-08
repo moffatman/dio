@@ -12,9 +12,11 @@ abstract class ConnectionManager {
         idleTimeout: idleTimeout,
         onClientCreate: onClientCreate,
       );
+  
+  Future<ConnectionTask<Socket>> connectionFactory(Uri url, String? proxyHost, int? proxyPort);
 
   /// Get the connection(may reuse) for each request.
-  Future<ClientTransportConnection> getConnection(RequestOptions options);
+  Future<ClientTransportConnection?> getConnection(RequestOptions options);
 
   void removeConnection(ClientTransportConnection transport);
 

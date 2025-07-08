@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dio/adapter.dart';
 import 'package:dio/dio.dart';
 import 'package:http2/http2.dart';
 
@@ -13,9 +14,15 @@ part 'connection_manager_imp.dart';
 /// A Dio HttpAdapter which implements Http/2.0.
 class Http2Adapter extends HttpClientAdapter {
   final ConnectionManager _connectionMgr;
+  late final DefaultHttpClientAdapter _http1Adapter = DefaultHttpClientAdapter()..onHttpClientCreate = _onHttp1ClientCreate;
 
   Http2Adapter(ConnectionManager? connectionManager)
       : _connectionMgr = connectionManager ?? ConnectionManager();
+  
+  HttpClient? _onHttp1ClientCreate(HttpClient client) {
+    client.connectionFactory = _connectionMgr.connectionFactory;
+    return client;
+  }
 
   @override
   Future<ResponseBody> fetch(
@@ -39,6 +46,10 @@ class Http2Adapter extends HttpClientAdapter {
     List<RedirectRecord> redirects,
   ) async {
     final transport = await _connectionMgr.getConnection(options);
+    if (transport == null) {
+      // HTTP 1.x
+      return _http1Adapter.fetch(options, requestStream, cancelFuture);
+    }
     final uri = options.uri;
     var path = uri.path;
     const excludeMethods = ['PUT', 'POST', 'PATCH'];
