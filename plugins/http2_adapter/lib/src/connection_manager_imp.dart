@@ -35,7 +35,8 @@ class _ConnectionManager implements ConnectionManager {
     var uri = options.uri;
     var domain = '${uri.host}:${uri.port}';
     var transportState = _transportsMap[domain];
-    if (transportState == null) {
+    if (transportState == null || !transportState.transport.isOpen) {
+      transportState?.dispose();
       var _initFuture = _connectFutures[domain];
       if (_initFuture == null) {
         _connectFutures[domain] = _initFuture = _connect(options);
@@ -46,12 +47,6 @@ class _ConnectionManager implements ConnectionManager {
       } else {
         _transportsMap[domain] = transportState;
         var _ = _connectFutures.remove(domain);
-      }
-    } else {
-      // Check whether the connection is terminated, if it is, reconnecting.
-      if (!transportState.transport.isOpen) {
-        transportState.dispose();
-        _transportsMap[domain] = transportState = await _connect(options);
       }
     }
     return transportState.activeTransport;
