@@ -152,8 +152,9 @@ class Http2Adapter extends HttpClientAdapter {
         redirects,
       );
     }
+    final isGzip = responseHeaders.value(HttpHeaders.contentEncodingHeader) == 'gzip';
     return ResponseBody(
-      sc.stream,
+      isGzip ? gzip.decoder.bind(sc.stream).cast<Uint8List>() : sc.stream,
       statusCode,
       headers: responseHeaders.map,
       redirects: redirects,
