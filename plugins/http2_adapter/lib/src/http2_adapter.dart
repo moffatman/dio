@@ -153,12 +153,31 @@ class Http2Adapter extends HttpClientAdapter {
 
     // Handle redirection
     if (needRedirect) {
-      var url = responseHeaders.value('location');
-      redirects.add(
-          RedirectRecord(statusCode, options.method, Uri.parse(url ?? '')));
+      var location = responseHeaders.value('location');
+      String method;
+      Stream<Uint8List>? stream;
+      Map<String, dynamic> headers = options.headers;
+      if (statusCode == HttpStatus.seeOther && options.method == 'POST') {
+        method = 'GET';
+        headers = Map.of(headers);
+        headers.remove(Headers.contentLengthHeader);
+        headers.remove(Headers.contentTypeHeader);
+      } else {
+        method = options.method;
+        if (list != null) {
+          stream = Stream.fromIterable(list);
+        }
+      }
+      var url = uri.resolve(location ?? '');
+      redirects.add(RedirectRecord(statusCode, method, url));
       return _fetch(
-        options.copyWith(path: url, maxRedirects: --options.maxRedirects),
-        list != null ? Stream.fromIterable(list) : null,
+        options.copyWith(
+          path: url.toString(),
+          maxRedirects: --options.maxRedirects,
+          method: method,
+          headers: headers,
+        ),
+        stream,
         cancelFuture,
         redirects,
       );
