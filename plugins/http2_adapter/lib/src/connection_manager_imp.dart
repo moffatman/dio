@@ -226,6 +226,8 @@ abstract class _ClientTransportConnectionWrapper {
   bool get isOpen;
   set onActiveStateChanged(void Function(bool) cb);
   Future<void> finish();
+  @override
+  String toString() => '$runtimeType(${identityHashCode(this)})';
 }
 
 class _ClientTransportConnectionWrapper1 extends _ClientTransportConnectionWrapper {
