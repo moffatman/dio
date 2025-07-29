@@ -236,7 +236,11 @@ class _ClientTransportConnectionWrapper1 extends _ClientTransportConnectionWrapp
   SecureSocket? socket;
   void Function(bool) _onActiveStateChanged = (_) {};
   _ClientTransportConnectionWrapper1(this.clientConfig, this.domain, this.socket) {
-    socket?.done.then((_) {
+    Future.any([
+      socket?.done.catchError((_) => null) ?? Future.value(null),
+      // I've seen the server side initial socket timeout to be 60s often. Use 30s to be safe.
+      Future.delayed(const Duration(seconds: 30))
+    ]).then((_) {
       _onActiveStateChanged(false);
       socket = null;
     });
