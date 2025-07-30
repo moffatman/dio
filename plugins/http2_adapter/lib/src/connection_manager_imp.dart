@@ -19,11 +19,29 @@ class _ConnectionManager implements ConnectionManager {
   /// Saving the connecting futures
   final _connectFutures = <String, Future<_ClientTransportConnectionState>>{};
 
+  final _http1Domains = <String, int>{};
+
   bool _closed = false;
   bool _forceClosed = false;
 
   _ConnectionManager({int? idleTimeout, this.onClientCreate})
       : _idleTimeout = idleTimeout ?? 1000;
+  
+  void _bumpHttp1Domain(String domain) {
+    if (_http1Domains.update(domain, (x) => x + 1, ifAbsent: () => 1) == 1) {
+      // New insert, maybe kick one out
+      if (_http1Domains.length > 50) {
+        String? minKey;
+        int minCount = 1 << 50;
+        for (final entry in _http1Domains.entries) {
+          if (entry.value < minCount) {
+            minKey = entry.key;
+          }
+        }
+        _http1Domains.remove(minKey);
+      }
+    }
+  }
 
   @override
   Future<ConnectionTask<Socket>> connectionFactory(Uri url, String? proxyHost, int? proxyPort) async {
@@ -97,8 +115,13 @@ class _ConnectionManager implements ConnectionManager {
     if (onClientCreate != null) {
       onClientCreate!(uri, clientConfig);
     }
-    _ClientTransportConnectionWrapper transport;
-    if (uri.isScheme('https')) {
+    final _ClientTransportConnectionWrapper transport;
+    if (_http1Domains.containsKey(domain)) {
+      _bumpHttp1Domain(domain);
+      // Known HTTP(s) 1.x
+      transport = _ClientTransportConnectionWrapper1(clientConfig, domain, null);
+    }
+    else if (uri.isScheme('https')) {
       late SecureSocket socket;
       try {
         // Create socket
@@ -129,6 +152,7 @@ class _ConnectionManager implements ConnectionManager {
         transport = _ClientTransportConnectionWrapper2(ClientTransportConnection.viaSocket(socket));
       }
       else {
+        _bumpHttp1Domain(domain);
         // HTTPS 1.x
         transport = _ClientTransportConnectionWrapper1(clientConfig, domain, socket);
       }
