@@ -34,10 +34,6 @@ class FormData {
   /// The [files].
   final files = <MapEntry<String, MultipartFile>>[];
 
-  /// Whether [finalize] has been called.
-  bool get isFinalized => _isFinalized;
-  bool _isFinalized = false;
-
   FormData() {
     _init();
   }
@@ -146,10 +142,6 @@ class FormData {
   }
 
   Stream<List<int>> finalize() {
-    if (isFinalized) {
-      throw StateError("Can't finalize a finalized MultipartFile.");
-    }
-    _isFinalized = true;
     var controller = StreamController<List<int>>(sync: false);
     void writeAscii(String string) {
       controller.add(utf8.encode(string));

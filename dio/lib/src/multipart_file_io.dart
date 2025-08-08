@@ -13,9 +13,9 @@ Future<MultipartFile> multipartFileFromPath(
   filename ??= p.basename(filePath);
   var file = File(filePath);
   var length = await file.length();
-  var stream = file.openRead();
+  var streamBuilder = file.openRead;
   return MultipartFile(
-    stream,
+    streamBuilder,
     length,
     filename: filename,
     contentType: contentType,
@@ -32,9 +32,9 @@ MultipartFile multipartFileFromPathSync(
   filename ??= p.basename(filePath);
   var file = File(filePath);
   var length = file.lengthSync();
-  var stream = file.openRead();
+  var streamBuilder = file.openRead;
   return MultipartFile(
-    stream,
+    streamBuilder,
     length,
     filename: filename,
     contentType: contentType,

@@ -27,8 +27,8 @@ class MultipartFile {
   /// The content-type of the file. Defaults to `application/octet-stream`.
   final MediaType? contentType;
 
-  /// The stream that will emit the file's contents.
-  final Stream<List<int>> _stream;
+  /// The function to build the stream that will emit the file's contents.
+  final Stream<List<int>> Function() _streamBuilder;
 
   /// Whether [finalize] has been called.
   bool get isFinalized => _isFinalized;
@@ -41,12 +41,12 @@ class MultipartFile {
   /// [contentType] currently defaults to `application/octet-stream`, but in the
   /// future may be inferred from [filename].
   MultipartFile(
-    Stream<List<int>> stream,
+    Stream<List<int>> Function() streamBuilder,
     this.length, {
     this.filename,
     MediaType? contentType,
     Map<String, List<String>>? headers,
-  })  : _stream = stream,
+  })  : _streamBuilder = streamBuilder,
         headers = caseInsensitiveKeyMap(headers),
         contentType = contentType ?? MediaType('application', 'octet-stream');
 
@@ -60,9 +60,9 @@ class MultipartFile {
     MediaType? contentType,
     final Map<String, List<String>>? headers,
   }) {
-    var stream = Stream.fromIterable([value]);
+    streamBuilder() => Stream.fromIterable([value]);
     return MultipartFile(
-      stream,
+      streamBuilder,
       value.length,
       filename: filename,
       contentType: contentType,
@@ -129,10 +129,6 @@ class MultipartFile {
       );
 
   Stream<List<int>> finalize() {
-    if (isFinalized) {
-      throw StateError("Can't finalize a finalized MultipartFile.");
-    }
-    _isFinalized = true;
-    return _stream;
+    return _streamBuilder();
   }
 }
