@@ -198,11 +198,13 @@ class ErrorInterceptorHandler extends _BaseHandler {
   }
 
   /// Complete the request with a error directly! Other error interceptor(s) will not be executed.
-  void reject(DioError error) {
+  void reject(DioError error, [bool callFollowingErrorInterceptor = false]) {
     _completer.completeError(
       InterceptorState<DioError>(
         error,
-        InterceptorResultType.reject,
+        callFollowingErrorInterceptor
+            ? InterceptorResultType.rejectCallFollowing
+            : InterceptorResultType.reject,
       ),
       error.stackTrace,
     );
