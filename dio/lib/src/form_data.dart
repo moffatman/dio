@@ -153,7 +153,7 @@ class FormData {
     fields.forEach((entry) {
       writeAscii('--$boundary\r\n');
       writeAscii(_headerForField(entry.key, entry.value));
-      writeUtf8(entry.value);
+      if (entry.value.isNotEmpty) writeUtf8(entry.value);
       writeLine();
     });
 

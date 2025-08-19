@@ -11,7 +11,7 @@ final RegExp _asciiOnly = RegExp(r'^[\x00-\x7F]+$');
 
 /// Returns whether [string] is composed entirely of ASCII-compatible
 /// characters.
-bool isPlainAscii(String string) => _asciiOnly.hasMatch(string);
+bool isPlainAscii(String string) => string.isEmpty || _asciiOnly.hasMatch(string);
 
 /// Pipes all data and errors from [stream] into [sink]. Completes [Future] once
 /// [stream] is done. Unlike [store], [sink] remains open after [stream] is
