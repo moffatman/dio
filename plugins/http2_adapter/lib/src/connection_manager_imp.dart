@@ -88,16 +88,19 @@ class _ConnectionManager implements ConnectionManager {
     var transportState = _transportsMap[domain];
     if (transportState == null || !transportState.transport.isOpen) {
       transportState?.dispose();
-      var _initFuture = _connectFutures[domain];
-      if (_initFuture == null) {
-        _connectFutures[domain] = _initFuture = _connect(options);
+      final initFuture = _connectFutures[domain] ??= _connect(options);
+      try {
+        transportState = await initFuture;
+        if (_forceClosed) {
+          transportState.dispose();
+        } else {
+          _transportsMap[domain] = transportState;
+        }
       }
-      transportState = await _initFuture;
-      if (_forceClosed) {
-        transportState.dispose();
-      } else {
-        _transportsMap[domain] = transportState;
-        var _ = _connectFutures.remove(domain);
+      finally {
+        if (_connectFutures[domain] == initFuture) {
+          _connectFutures.remove(domain);
+        }
       }
     }
     final activeWrapper = transportState.activeTransport;
