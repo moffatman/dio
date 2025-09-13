@@ -152,7 +152,9 @@ class _ConnectionManager implements ConnectionManager {
       }
       if (socket.selectedProtocol == 'h2') {
         // HTTPS 2.0
-        transport = _ClientTransportConnectionWrapper2(ClientTransportConnection.viaSocket(socket));
+        transport = _ClientTransportConnectionWrapper2(ClientTransportConnection.viaSocket(socket, settings: ClientSettings(
+          streamWindowSize: 6 * 1024 * 1024
+        )));
       }
       else {
         _bumpHttp1Domain(domain);
