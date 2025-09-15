@@ -96,7 +96,7 @@ class Http2Adapter extends HttpClientAdapter {
 
     await stream.outgoingMessages.close();
 
-    final sc = StreamController<Uint8List>();
+    final sc = StreamController<Uint8List>(sync: true);
     final responseHeaders = Headers();
     var completer = Completer();
     late int statusCode;
