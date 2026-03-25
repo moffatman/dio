@@ -70,6 +70,8 @@ class _ConnectionManager implements ConnectionManager {
         url.host,
         url.port,
         context: clientConfig?.context,
+        useEchGrease: clientConfig?.useEchGrease,
+        useNewAlpsCodePoint: clientConfig?.useNewAlpsCodePoint,
         onBadCertificate: clientConfig?.onBadCertificate
       );
     }
@@ -136,7 +138,12 @@ class _ConnectionManager implements ConnectionManager {
               : null,
           context: clientConfig.context,
           onBadCertificate: clientConfig.onBadCertificate,
-          supportedProtocols: ['h2', 'http/1.1']
+          supportedProtocols: ['h2', 'http/1.1'],
+          protocolSettings: (clientConfig.useAlps ?? Platform.isAndroid) ? {
+            'h2': Uint8List(0)
+          } : {},
+          useNewAlpsCodePoint: clientConfig.useNewAlpsCodePoint,
+          useEchGrease: clientConfig.useEchGrease
         );
       } on SocketException catch (e) {
         if (e.osError == null) {

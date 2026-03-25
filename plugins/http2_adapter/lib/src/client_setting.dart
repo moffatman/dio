@@ -13,4 +13,8 @@ class ClientSetting {
   /// the connection or not.  The handler should return true
   /// to continue the [SecureSocket] connection.
   bool Function(X509Certificate certificate)? onBadCertificate;
+
+  bool? useAlps;
+  bool? useNewAlpsCodePoint;
+  bool? useEchGrease;
 }
