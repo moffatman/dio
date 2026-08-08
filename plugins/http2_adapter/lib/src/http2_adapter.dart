@@ -7,9 +7,17 @@ import 'package:dio/adapter.dart';
 import 'package:dio/dio.dart';
 import 'package:http2/http2.dart';
 
+import 'redirect.dart';
+
 part 'client_setting.dart';
 part 'connection_manager.dart';
 part 'connection_manager_imp.dart';
+
+const _sensitiveRequestHeaders = {
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+};
 
 /// A Dio HttpAdapter which implements Http/2.0.
 class Http2Adapter extends HttpClientAdapter {
@@ -29,21 +37,19 @@ class Http2Adapter extends HttpClientAdapter {
     RequestOptions options,
     Stream<Uint8List>? requestStream,
     Future? cancelFuture,
-  ) async {
-    var redirects = <RedirectRecord>[];
-    return _fetch(
-      options,
-      requestStream,
-      cancelFuture,
-      redirects,
+  ) {
+    return fetchFollowingRedirects(
+      fetchOne: _fetchSingle,
+      options: options,
+      requestStream: requestStream,
+      cancelFuture: cancelFuture,
     );
   }
 
-  Future<ResponseBody> _fetch(
+  Future<ResponseBody> _fetchSingle(
     RequestOptions options,
     Stream<Uint8List>? requestStream,
     Future? cancelFuture,
-    List<RedirectRecord> redirects,
   ) async {
     final transport = await _connectionMgr.getConnection(options);
     if (transport == null) {
@@ -52,7 +58,6 @@ class Http2Adapter extends HttpClientAdapter {
     }
     final uri = options.uri;
     var path = uri.path;
-    const excludeMethods = ['PUT', 'POST', 'PATCH'];
 
     if (path.isEmpty || !path.startsWith('/')) path = '/' + path;
     if (uri.query.trim().isNotEmpty) path += ('?' + uri.query);
@@ -66,14 +71,20 @@ class Http2Adapter extends HttpClientAdapter {
 
     // Add custom headers
     headers.addAll(
-      options.headers.keys
-          .map(
-              (key) => Header.ascii(key, options.headers[key]?.toString() ?? ''))
-          .toList(),
+      options.headers.keys.map((key) {
+        final normalizedName = key.toLowerCase();
+        return Header.ascii(
+          normalizedName,
+          options.headers[key]?.toString() ?? '',
+          neverIndexed: _sensitiveRequestHeaders.contains(normalizedName),
+        );
+      }),
     );
 
+    var hasRequestData = requestStream != null;
+
     // Creates a new outgoing stream.
-    final stream = transport.makeRequest(headers);
+    final stream = transport.makeRequest(headers, endStream: !hasRequestData);
 
     // ignore: unawaited_futures
     cancelFuture?.whenComplete(() {
@@ -81,13 +92,6 @@ class Http2Adapter extends HttpClientAdapter {
         stream.terminate();
       });
     });
-
-    List<Uint8List>? list;
-    var hasRequestData = requestStream != null;
-    if (!excludeMethods.contains(options.method) && hasRequestData) {
-      list = await requestStream!.toList();
-      requestStream = Stream.fromIterable(list);
-    }
 
     if (hasRequestData) {
       await requestStream!.listen((data) {
@@ -101,9 +105,9 @@ class Http2Adapter extends HttpClientAdapter {
     final responseHeaders = Headers();
     var completer = Completer();
     late int statusCode;
-    var needRedirect = false;
     late StreamSubscription subscription;
     var needResponse = false;
+    var responseFinished = false;
     subscription = stream.incomingMessages.listen(
       (message) async {
         if (message is HeadersStreamMessage) {
@@ -118,11 +122,8 @@ class Http2Adapter extends HttpClientAdapter {
             statusCode = int.parse(status);
             responseHeaders.removeAll(':status');
 
-            needRedirect = _needRedirect(options, statusCode);
-
-            needResponse =
-                !needRedirect && options.validateStatus(statusCode) ||
-                    options.receiveDataWhenStatusError;
+            needResponse = options.validateStatus(statusCode) ||
+                options.receiveDataWhenStatusError;
 
             completer.complete();
           }
@@ -135,8 +136,12 @@ class Http2Adapter extends HttpClientAdapter {
           }
         }
       },
-      onDone: () => sc.close(),
+      onDone: () {
+        responseFinished = true;
+        sc.close();
+      },
       onError: (e) {
+        responseFinished = true;
         // If connection is being forcefully terminated, remove the connection
         if (e is TransportConnectionException) {
           _connectionMgr.removeConnection(transport);
@@ -149,55 +154,19 @@ class Http2Adapter extends HttpClientAdapter {
       },
       cancelOnError: true,
     );
+    sc.onCancel = () {
+      if (!responseFinished) stream.terminate();
+      return subscription.cancel();
+    };
 
     await completer.future;
 
-    // Handle redirection
-    if (needRedirect) {
-      var location = responseHeaders.value('location');
-      String method;
-      Stream<Uint8List>? stream;
-      Map<String, dynamic> headers = options.headers;
-      if (statusCode == HttpStatus.seeOther && options.method == 'POST') {
-        method = 'GET';
-        headers = Map.of(headers);
-        headers.remove(Headers.contentLengthHeader);
-        headers.remove(Headers.contentTypeHeader);
-      } else {
-        method = options.method;
-        if (list != null) {
-          stream = Stream.fromIterable(list);
-        }
-      }
-      var url = uri.resolve(location ?? '');
-      redirects.add(RedirectRecord(statusCode, method, url));
-      return _fetch(
-        options.copyWith(
-          path: url.toString(),
-          maxRedirects: --options.maxRedirects,
-          method: method,
-          headers: headers,
-        ),
-        stream,
-        cancelFuture,
-        redirects,
-      );
-    }
     final isGzip = responseHeaders.value(HttpHeaders.contentEncodingHeader) == 'gzip';
     return ResponseBody(
       isGzip ? gzip.decoder.bind(sc.stream).cast<Uint8List>() : sc.stream,
       statusCode,
       headers: responseHeaders.map,
-      redirects: redirects,
-      isRedirect: redirects.isNotEmpty,
     );
-  }
-
-  bool _needRedirect(RequestOptions options, int status) {
-    const statusCodes = [301, 302, 303, 307, 308];
-    return options.followRedirects &&
-        options.maxRedirects > 0 &&
-        statusCodes.contains(status);
   }
 
   @override

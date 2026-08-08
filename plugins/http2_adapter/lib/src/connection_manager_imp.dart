@@ -152,9 +152,46 @@ class _ConnectionManager implements ConnectionManager {
       }
       if (socket.selectedProtocol == 'h2') {
         // HTTPS 2.0
-        transport = _ClientTransportConnectionWrapper2(ClientTransportConnection.viaSocket(socket, settings: ClientSettings(
-          streamWindowSize: 6 * 1024 * 1024
-        )));
+        final http2Settings = Platform.isAndroid
+            ? const ClientSettings(
+                headerTableSize: 64 * 1024,
+                streamWindowSize: 6 * 1024 * 1024,
+                connectionWindowSize: 15 * 1024 * 1024,
+                maxHeaderListSize: 256 * 1024,
+                noRfc7540Priorities: null,
+                initialStreamPriority: StreamPriority(
+                  streamDependency: 0,
+                  weight: 255,
+                  exclusive: true,
+                ),
+              )
+            : const ClientSettings(
+                streamWindowSize: 2 * 1024 * 1024,
+                connectionWindowSize: 10 * 1024 * 1024,
+                concurrentStreamLimit: 100,
+                noRfc7540Priorities: true,
+              );
+        final http2Transport = ClientTransportConnection.viaSocket(socket, settings: http2Settings);
+        if (!Platform.isAndroid) {
+          final settingsTimeout = options.connectTimeout > 0
+              ? Duration(milliseconds: options.connectTimeout)
+              : const Duration(seconds: 15);
+          try {
+            // WebKit waits for the peer's initial SETTINGS and writes its ACK
+            // before opening the first request stream.
+            await http2Transport.onInitialPeerSettingsReceived
+                .timeout(settingsTimeout);
+          } on TimeoutException {
+            await http2Transport.terminate(ErrorCode.SETTINGS_TIMEOUT);
+            throw DioError(
+              requestOptions: options,
+              error: 'Receiving initial HTTP/2 settings timed out '
+                  '[${settingsTimeout.inMilliseconds}ms]',
+              type: DioErrorType.connectTimeout,
+            );
+          }
+        }
+        transport = _ClientTransportConnectionWrapper2(http2Transport);
       }
       else {
         _bumpHttp1Domain(domain);
