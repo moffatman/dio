@@ -58,9 +58,10 @@ class Http2Adapter extends HttpClientAdapter {
     if (uri.query.trim().isNotEmpty) path += ('?' + uri.query);
     var headers = [
       Header.ascii(':method', options.method),
-      Header.ascii(':path', path),
-      Header.ascii(':scheme', uri.scheme),
+      if (!Platform.isAndroid) Header.ascii(':scheme', uri.scheme),
       Header.ascii(':authority', uri.host),
+      if (Platform.isAndroid) Header.ascii(':scheme', uri.scheme),
+      Header.ascii(':path', path),
     ];
 
     // Add custom headers
