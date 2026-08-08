@@ -95,6 +95,7 @@ class BaseOptions extends _RequestConfig with OptionsMixin {
     bool? receiveDataWhenStatusError,
     bool? followRedirects,
     int? maxRedirects,
+    bool? preferHttp3WithoutAltSvc,
     RequestEncoder? requestEncoder,
     ResponseDecoder? responseDecoder,
     ListFormat? listFormat,
@@ -111,6 +112,7 @@ class BaseOptions extends _RequestConfig with OptionsMixin {
           receiveDataWhenStatusError: receiveDataWhenStatusError,
           followRedirects: followRedirects,
           maxRedirects: maxRedirects,
+          preferHttp3WithoutAltSvc: preferHttp3WithoutAltSvc,
           requestEncoder: requestEncoder,
           responseDecoder: responseDecoder,
           listFormat: listFormat,
@@ -137,6 +139,7 @@ class BaseOptions extends _RequestConfig with OptionsMixin {
     bool? receiveDataWhenStatusError,
     bool? followRedirects,
     int? maxRedirects,
+    bool? preferHttp3WithoutAltSvc,
     RequestEncoder? requestEncoder,
     ResponseDecoder? responseDecoder,
     ListFormat? listFormat,
@@ -158,6 +161,7 @@ class BaseOptions extends _RequestConfig with OptionsMixin {
           receiveDataWhenStatusError ?? this.receiveDataWhenStatusError,
       followRedirects: followRedirects ?? this.followRedirects,
       maxRedirects: maxRedirects ?? this.maxRedirects,
+      preferHttp3WithoutAltSvc: preferHttp3WithoutAltSvc ?? this.preferHttp3WithoutAltSvc,
       requestEncoder: requestEncoder ?? this.requestEncoder,
       responseDecoder: responseDecoder ?? this.responseDecoder,
       listFormat: listFormat ?? this.listFormat,
@@ -212,6 +216,7 @@ class Options {
     this.receiveDataWhenStatusError,
     this.followRedirects,
     this.maxRedirects,
+    this.preferHttp3WithoutAltSvc,
     this.requestEncoder,
     this.responseDecoder,
     this.listFormat,
@@ -230,6 +235,7 @@ class Options {
     bool? receiveDataWhenStatusError,
     bool? followRedirects,
     int? maxRedirects,
+    bool? preferHttp3WithoutAltSvc,
     RequestEncoder? requestEncoder,
     ResponseDecoder? responseDecoder,
     ListFormat? listFormat,
@@ -266,6 +272,7 @@ class Options {
           receiveDataWhenStatusError ?? this.receiveDataWhenStatusError,
       followRedirects: followRedirects ?? this.followRedirects,
       maxRedirects: maxRedirects ?? this.maxRedirects,
+      preferHttp3WithoutAltSvc: preferHttp3WithoutAltSvc ?? this.preferHttp3WithoutAltSvc,
       requestEncoder: requestEncoder ?? this.requestEncoder,
       responseDecoder: responseDecoder ?? this.responseDecoder,
       listFormat: listFormat ?? this.listFormat,
@@ -317,6 +324,7 @@ class Options {
           receiveDataWhenStatusError ?? baseOpt.receiveDataWhenStatusError,
       followRedirects: followRedirects ?? baseOpt.followRedirects,
       maxRedirects: maxRedirects ?? baseOpt.maxRedirects,
+      preferHttp3WithoutAltSvc: preferHttp3WithoutAltSvc ?? baseOpt.preferHttp3WithoutAltSvc,
       queryParameters: query,
       requestEncoder: requestEncoder ?? baseOpt.requestEncoder,
       responseDecoder: responseDecoder ?? baseOpt.responseDecoder,
@@ -413,6 +421,8 @@ class Options {
   /// Possible values defined in [ListFormat] are `csv`, `ssv`, `tsv`, `pipes`, `multi`, `multiCompatible`.
   /// The default value is `multi`.
   ListFormat? listFormat;
+
+  bool? preferHttp3WithoutAltSvc;
 }
 
 class RequestOptions extends _RequestConfig with OptionsMixin {
@@ -436,6 +446,7 @@ class RequestOptions extends _RequestConfig with OptionsMixin {
     bool? receiveDataWhenStatusError,
     bool? followRedirects,
     int? maxRedirects,
+    bool? preferHttp3WithoutAltSvc,
     RequestEncoder? requestEncoder,
     ResponseDecoder? responseDecoder,
     ListFormat? listFormat,
@@ -452,6 +463,7 @@ class RequestOptions extends _RequestConfig with OptionsMixin {
           receiveDataWhenStatusError: receiveDataWhenStatusError,
           followRedirects: followRedirects,
           maxRedirects: maxRedirects,
+          preferHttp3WithoutAltSvc: preferHttp3WithoutAltSvc,
           requestEncoder: requestEncoder,
           responseDecoder: responseDecoder,
           listFormat: listFormat,
@@ -482,6 +494,7 @@ class RequestOptions extends _RequestConfig with OptionsMixin {
     bool? receiveDataWhenStatusError,
     bool? followRedirects,
     int? maxRedirects,
+    bool? preferHttp3WithoutAltSvc,
     RequestEncoder? requestEncoder,
     ResponseDecoder? responseDecoder,
     ListFormat? listFormat,
@@ -517,6 +530,7 @@ class RequestOptions extends _RequestConfig with OptionsMixin {
           receiveDataWhenStatusError ?? this.receiveDataWhenStatusError,
       followRedirects: followRedirects ?? this.followRedirects,
       maxRedirects: maxRedirects ?? this.maxRedirects,
+      preferHttp3WithoutAltSvc: preferHttp3WithoutAltSvc ?? this.preferHttp3WithoutAltSvc,
       requestEncoder: requestEncoder ?? this.requestEncoder,
       responseDecoder: responseDecoder ?? this.responseDecoder,
       listFormat: listFormat ?? this.listFormat,
@@ -582,6 +596,7 @@ class _RequestConfig {
     ListFormat? listFormat,
     bool? followRedirects,
     int? maxRedirects,
+    this.preferHttp3WithoutAltSvc,
     bool? receiveDataWhenStatusError,
     ValidateStatus? validateStatus,
     this.responseType,
@@ -720,4 +735,6 @@ class _RequestConfig {
   /// The value can be overridden per parameter by adding a [MultiParam]
   /// object to the query or body data map.
   late ListFormat listFormat;
+
+  bool? preferHttp3WithoutAltSvc;
 }
