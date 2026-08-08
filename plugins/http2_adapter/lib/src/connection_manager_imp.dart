@@ -264,15 +264,29 @@ class _ClientTransportConnectionWrapper1 extends _ClientTransportConnectionWrapp
   final String domain;
   SecureSocket? socket;
   void Function(bool) _onActiveStateChanged = (_) {};
+  Timer? _socketTimeout;
+  bool _inactive = false;
+
   _ClientTransportConnectionWrapper1(this.clientConfig, this.domain, this.socket) {
-    Future.any([
-      socket?.done.catchError((_) => null) ?? Future.value(null),
-      // I've seen the server side initial socket timeout to be 60s often. Use 30s to be safe.
-      Future.delayed(const Duration(seconds: 30))
-    ]).then((_) {
-      _onActiveStateChanged(false);
-      socket = null;
-    });
+    final currentSocket = socket;
+    if (currentSocket == null) {
+      scheduleMicrotask(_markInactive);
+      return;
+    }
+    currentSocket.done.then(
+      (_) => _markInactive(),
+      onError: (_) => _markInactive(),
+    );
+    // Servers often leave an unused initial HTTP/1 socket open for 60s.
+    _socketTimeout = Timer(const Duration(seconds: 30), _markInactive);
+  }
+  void _markInactive() {
+    if (_inactive) return;
+    _inactive = true;
+    _socketTimeout?.cancel();
+    _socketTimeout = null;
+    _onActiveStateChanged(false);
+    socket = null;
   }
   @override
   bool get isOpen => socket != null;
@@ -282,6 +296,8 @@ class _ClientTransportConnectionWrapper1 extends _ClientTransportConnectionWrapp
   }
   @override
   Future<void> finish() async {
+    _socketTimeout?.cancel();
+    _socketTimeout = null;
     final s = socket;
     socket = null;
     await s?.close();
