@@ -94,7 +94,7 @@ class Http2Adapter extends HttpClientAdapter {
     });
 
     if (hasRequestData) {
-      await requestStream!.listen((data) {
+      await requestStream.listen((data) {
         stream.outgoingMessages.add(DataStreamMessage(data));
       }).asFuture();
     }
