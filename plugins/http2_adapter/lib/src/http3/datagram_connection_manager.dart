@@ -1,5 +1,7 @@
 part of '../http3_adapter.dart';
 
+const int _h3NoError = 0x0100;
+
 class Http3ConnectionTerminatedException implements Exception {
   const Http3ConnectionTerminatedException(this.termination);
 
@@ -607,7 +609,28 @@ class _DatagramHttp3ClientConnection implements Http3ClientConnection {
       final cancellationSignal = Completer<void>();
       var headerDecoding = Future<void>.value();
       var requestCancelled = false;
+      var responseHeadersReceived = false;
+      var responseBodyBytes = 0;
       late int statusCode;
+
+      bool responseIsCompleteWithoutFin() {
+        if (!responseHeadersReceived || !frameDecoder.isAtFrameBoundary) {
+          return false;
+        }
+        final method = options.method.toUpperCase();
+        if (method == 'HEAD' || statusCode == 204 || statusCode == 304) {
+          return responseBodyBytes == 0;
+        }
+        if (method == 'CONNECT' && statusCode >= 200 && statusCode < 300) {
+          return false;
+        }
+        final contentLength = int.tryParse(
+          responseHeaders.value(HttpHeaders.contentLengthHeader) ?? '',
+        );
+        return contentLength != null &&
+            contentLength >= 0 &&
+            responseBodyBytes == contentLength;
+      }
 
       late final StreamSubscription<Uint8List> subscription;
       subscription = stream.incoming.listen(
@@ -624,6 +647,7 @@ class _DatagramHttp3ClientConnection implements Http3ClientConnection {
                 if (status != null && !responseReady.isCompleted) {
                   statusCode = int.parse(status);
                   responseHeaders.removeAll(':status');
+                  responseHeadersReceived = true;
                   responseReady.complete();
                 }
               });
@@ -636,6 +660,7 @@ class _DatagramHttp3ClientConnection implements Http3ClientConnection {
                 }
               }));
             } else if (frame is Http3DataFrame) {
+              responseBodyBytes += frame.data.length;
               responseData.add(frame.data);
             }
           }
@@ -658,14 +683,33 @@ class _DatagramHttp3ClientConnection implements Http3ClientConnection {
           }));
         },
         onError: (Object error, StackTrace stackTrace) {
-          _transport.cancelResponseHeaders(stream.id);
-          if (!responseReady.isCompleted) {
-            responseReady.completeError(error, stackTrace);
-          } else {
-            responseData.addError(error, stackTrace);
-          }
-          unawaited(responseData.close());
-          finishRequest();
+          unawaited(headerDecoding.then((_) async {
+            final completedWithNoError =
+                error is _DatagramStreamException &&
+                    error.errorCode == _h3NoError &&
+                    responseIsCompleteWithoutFin();
+            if (completedWithNoError) {
+              await responseData.close();
+            } else {
+              _transport.cancelResponseHeaders(stream.id);
+              if (!responseReady.isCompleted) {
+                responseReady.completeError(error, stackTrace);
+              } else {
+                responseData.addError(error, stackTrace);
+              }
+              await responseData.close();
+            }
+            finishRequest();
+          }, onError: (Object decodingError, StackTrace decodingStackTrace) async {
+            _transport.cancelResponseHeaders(stream.id);
+            if (!responseReady.isCompleted) {
+              responseReady.completeError(decodingError, decodingStackTrace);
+            } else {
+              responseData.addError(decodingError, decodingStackTrace);
+            }
+            await responseData.close();
+            finishRequest();
+          }));
         },
         cancelOnError: true,
       );
@@ -707,9 +751,13 @@ class _DatagramHttp3ClientConnection implements Http3ClientConnection {
         await Future.any<void>([
           requestDone.future,
           cancellationSignal.future,
+          stream.peerStoppedSending.then<void>((_) {}),
         ]);
+        if (stream.wasStoppedByPeer) {
+          await requestSubscription.cancel();
+        }
       }
-      if (!requestCancelled) {
+      if (!requestCancelled && !stream.wasStoppedByPeer) {
         await stream.close();
       }
 
@@ -1163,14 +1211,7 @@ class _DatagramQuicTransport {
       final writeErrorCode = _socket.streamWriteErrorCode(stream.id);
       if (writeErrorCode != null) {
         _pendingWrites.remove(stream.id);
-      }
-      final errorCode = _socket.streamReadErrorCode(stream.id);
-      if (errorCode != null) {
-        stream.fail(_DatagramStreamException(stream.id, errorCode));
-        _streams.remove(stream.id);
-        _pendingWrites.remove(stream.id);
-        _notifyDrained();
-        continue;
+        stream.peerStopSending(writeErrorCode);
       }
       while (!_closed) {
         final payload = _socket.streamRead(stream.id);
@@ -1182,6 +1223,14 @@ class _DatagramQuicTransport {
           break;
         }
         stream.addIncoming(payload);
+      }
+      if (!_streams.containsKey(stream.id)) continue;
+      final errorCode = _socket.streamReadErrorCode(stream.id);
+      if (errorCode != null) {
+        stream.fail(_DatagramStreamException(stream.id, errorCode));
+        _streams.remove(stream.id);
+        _pendingWrites.remove(stream.id);
+        _notifyDrained();
       }
     }
   }
@@ -1438,18 +1487,31 @@ class _DatagramQuicStream implements QuicClientStream {
   final _DatagramQuicTransport transport;
   final int id;
   final _incoming = StreamController<Uint8List>(sync: true);
+  final _peerStoppedSending = Completer<int>();
+
+  Future<int> get peerStoppedSending => _peerStoppedSending.future;
+
+  bool get wasStoppedByPeer => _peerStoppedSending.isCompleted;
 
   @override
   Stream<Uint8List> get incoming => _incoming.stream;
 
   @override
   void add(List<int> bytes) {
+    if (wasStoppedByPeer) return;
     transport.sendStreamData(id, bytes);
   }
 
   @override
   Future<void> close() async {
+    if (wasStoppedByPeer) return;
     transport.sendStreamData(id, const <int>[], fin: true);
+  }
+
+  void peerStopSending(int errorCode) {
+    if (!_peerStoppedSending.isCompleted) {
+      _peerStoppedSending.complete(errorCode);
+    }
   }
 
   @override

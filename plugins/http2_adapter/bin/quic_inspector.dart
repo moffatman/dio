@@ -123,6 +123,7 @@ Future<void> main(List<String> args) async {
     initialMaxStreamData: options.initialMaxStreamData,
     maxIdleTimeout: options.maxIdleTimeout,
     terminateFirstClientStream: options.terminateFirstClientStream,
+    completeResponseResetNoError: options.completeResponseResetNoError,
     keyUpdateAfterHandshake: options.keyUpdateAfterHandshake,
     closeAfterHandshake: options.closeAfterHandshake,
     probeClientClose: options.probeClientClose,
@@ -1469,6 +1470,7 @@ class _InspectorOptions {
     required this.initialMaxStreamData,
     required this.maxIdleTimeout,
     required this.terminateFirstClientStream,
+    required this.completeResponseResetNoError,
     required this.keyUpdateAfterHandshake,
     required this.closeAfterHandshake,
     required this.probeClientClose,
@@ -1502,6 +1504,7 @@ class _InspectorOptions {
   final int initialMaxStreamData;
   final int maxIdleTimeout;
   final bool terminateFirstClientStream;
+  final bool completeResponseResetNoError;
   final bool keyUpdateAfterHandshake;
   final bool closeAfterHandshake;
   final bool probeClientClose;
@@ -1535,6 +1538,7 @@ class _InspectorOptions {
     var initialMaxStreamData = 262144;
     var maxIdleTimeout = 30000;
     var terminateFirstClientStream = false;
+    var completeResponseResetNoError = false;
     var keyUpdateAfterHandshake = false;
     var closeAfterHandshake = false;
     var probeClientClose = false;
@@ -1578,6 +1582,8 @@ class _InspectorOptions {
           maxIdleTimeout = int.parse(args[++i]);
         case '--terminate-first-client-stream':
           terminateFirstClientStream = true;
+        case '--complete-response-reset-no-error':
+          completeResponseResetNoError = true;
         case '--key-update-after-handshake':
           keyUpdateAfterHandshake = true;
         case '--close-after-handshake':
@@ -1643,6 +1649,7 @@ class _InspectorOptions {
       initialMaxStreamData: initialMaxStreamData,
       maxIdleTimeout: maxIdleTimeout,
       terminateFirstClientStream: terminateFirstClientStream,
+      completeResponseResetNoError: completeResponseResetNoError,
       keyUpdateAfterHandshake: keyUpdateAfterHandshake,
       closeAfterHandshake: closeAfterHandshake,
       probeClientClose: probeClientClose,
@@ -1673,6 +1680,7 @@ class _InspectorOptions {
         '[--drop-first-client-datagram] [--initial-max-data bytes] '
         '[--initial-max-stream-data bytes] '
         '[--max-idle-timeout milliseconds] [--terminate-first-client-stream] '
+        '[--complete-response-reset-no-error] '
         '[--key-update-after-handshake] [--close-after-handshake] '
         '[--probe-client-close] [--version-negotiation] '
         '[--version-negotiation-includes-v1] '
@@ -1968,6 +1976,7 @@ class _QuicInspectorServer {
     required int initialMaxStreamData,
     required int maxIdleTimeout,
     required this.terminateFirstClientStream,
+    required this.completeResponseResetNoError,
     required this.keyUpdateAfterHandshake,
     required this.closeAfterHandshake,
     required this.probeClientClose,
@@ -1999,6 +2008,7 @@ class _QuicInspectorServer {
   final _BoringSslCrypto crypto;
   final _BoringSslQuicServer tls;
   final bool terminateFirstClientStream;
+  final bool completeResponseResetNoError;
   final bool keyUpdateAfterHandshake;
   final bool closeAfterHandshake;
   final bool probeClientClose;
@@ -2211,6 +2221,7 @@ class _QuicInspectorServer {
         serverConnectionId: serverConnectionId,
         clientConnectionId: packet.sourceConnectionId,
         terminateFirstClientStream: terminateFirstClientStream,
+        completeResponseResetNoError: completeResponseResetNoError,
         keyUpdateAfterHandshake: keyUpdateAfterHandshake,
         closeAfterHandshake: closeAfterHandshake,
         probeClientClose: probeClientClose,
@@ -2266,6 +2277,7 @@ class _QuicInspectorConnection {
     required this.serverConnectionId,
     required this.clientConnectionId,
     required this.terminateFirstClientStream,
+    required this.completeResponseResetNoError,
     required this.keyUpdateAfterHandshake,
     required this.closeAfterHandshake,
     required this.probeClientClose,
@@ -2290,6 +2302,7 @@ class _QuicInspectorConnection {
   final Uint8List serverConnectionId;
   final Uint8List clientConnectionId;
   final bool terminateFirstClientStream;
+  final bool completeResponseResetNoError;
   final bool keyUpdateAfterHandshake;
   final bool closeAfterHandshake;
   final bool probeClientClose;
@@ -2358,6 +2371,7 @@ class _QuicInspectorConnection {
   bool _sentPostHandshakeData = false;
   bool _sentKeyUpdateData = false;
   bool _terminatedFirstClientStream = false;
+  bool _sentCompleteResponseResetNoError = false;
   bool _probedClientClose = false;
   bool _sentConnectionId = false;
   bool _sentStatelessReset = false;
@@ -2637,6 +2651,47 @@ class _QuicInspectorConnection {
             : requestFrame.streamId + 4;
         responses.add(_buildGoawayPacket(id, packet.packetNumber));
         print('  server 1-rtt => h3 GOAWAY id=$id');
+      }
+    }
+    if (completeResponseResetNoError &&
+        !_sentCompleteResponseResetNoError &&
+        packet.level == _QuicEncryptionLevel.application &&
+        tls.writeSecrets.containsKey(_QuicEncryptionLevel.application)) {
+      _StreamFrame? requestFrame;
+      for (final frame in packet.streamFrames) {
+        if ((frame.streamId & 0x03) == 0 && frame.length != 0) {
+          requestFrame = frame;
+          break;
+        }
+      }
+      if (requestFrame != null) {
+        _sentCompleteResponseResetNoError = true;
+        // Required Insert Count = 0, Base = 0, static :status 200 (index 25),
+        // and static content-length: 0 (index 4).
+        final response = Uint8List.fromList(
+          const [0x01, 0x04, 0x00, 0x00, 0xd9, 0xc4],
+        );
+        final frames = BytesBuilder(copy: false);
+        _appendAckFrame(frames, packet.packetNumber);
+        _appendStreamFrame(
+          frames,
+          streamId: requestFrame.streamId,
+          offset: 0,
+          data: response,
+          fin: false,
+        );
+        _appendResetStreamFrame(
+          frames,
+          requestFrame.streamId,
+          0x0100,
+          response.length,
+        );
+        _appendStopSendingFrame(frames, requestFrame.streamId, 0x0100);
+        print('  server 1-rtt => complete response then RESET_STREAM '
+            'id=${requestFrame.streamId} error=256 finalSize=${response.length}');
+        print('  server 1-rtt => STOP_SENDING id=${requestFrame.streamId} '
+            'error=256');
+        responses.add(_buildShortHeaderPacket(frames.takeBytes()));
       }
     }
     if (terminateFirstClientStream &&
@@ -3794,8 +3849,9 @@ class _BoringSslCrypto {
     required Uint8List aad,
     required int cipherId,
   }) {
-    if (cipherId != _tlsAes128GcmSha256) {
-      throw UnsupportedError('Only AES-128-GCM Initial packets are supported');
+    if (cipherId != _tlsAes128GcmSha256 &&
+        cipherId != _tlsAes256GcmSha384) {
+      throw UnsupportedError('Unsupported QUIC packet cipher $cipherId');
     }
     final outLen = allocateIntPtr(ciphertext.length);
     final out = allocateBytes(Uint8List(ciphertext.length));
@@ -3803,7 +3859,12 @@ class _BoringSslCrypto {
     final noncePtr = allocateBytes(nonce);
     final inputPtr = allocateBytes(ciphertext);
     final aadPtr = allocateBytes(aad);
-    final ctx = _aeadCtxNew(_aeadAes128Gcm(), keyPtr, key.length, 0);
+    final ctx = _aeadCtxNew(
+      cipherId == _tlsAes256GcmSha384 ? _aeadAes256Gcm() : _aeadAes128Gcm(),
+      keyPtr,
+      key.length,
+      0,
+    );
     try {
       if (ctx == ffi.nullptr) throw const FormatException('AEAD init failed');
       final ok = _aeadOpen(

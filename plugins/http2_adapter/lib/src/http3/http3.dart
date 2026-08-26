@@ -181,6 +181,9 @@ class Http3FrameDecoder {
   int? _remainingPayload;
   BytesBuilder? _payload;
 
+  bool get isAtFrameBoundary =>
+      _header.isEmpty && _frameType == null && _remainingPayload == null;
+
   List<Http3Frame> add(List<int> bytes) {
     final input = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
     final frames = <Http3Frame>[];

@@ -534,6 +534,50 @@ void main() {
     }
   }, timeout: const Timeout(Duration(seconds: 20)));
 
+  test('accepts a complete response terminated with H3_NO_ERROR', () async {
+    final harness = await _InspectorHarness.start(const [
+      '--complete-response-reset-no-error',
+    ]);
+    final requestBodyCancelled = Completer<void>();
+    final requestBody = StreamController<Uint8List>(
+      onCancel: requestBodyCancelled.complete,
+    );
+    final manager = Http3ConnectionManager(
+      preferHttp3WithoutAltSvc: true,
+      onClientCreate: (_, settings) {
+        settings.onBadCertificate = (_) => true;
+      },
+    );
+    try {
+      final options = RequestOptions(
+        path: 'https://127.0.0.1:${harness.port}/no-error-reset',
+        method: 'POST',
+      );
+      final connection = await manager.getConnection(options);
+      expect(connection, isNotNull);
+
+      final response = await connection!
+          .fetch(options, requestBody.stream, null)
+          .timeout(const Duration(seconds: 5));
+      expect(response.statusCode, 200);
+      expect(await response.stream.toList(), isEmpty);
+      await requestBodyCancelled.future.timeout(const Duration(seconds: 5));
+      expect(connection.isOpen, isTrue);
+      expect(
+        harness.output,
+        contains(contains('complete response then RESET_STREAM id=0 error=256')),
+      );
+      expect(
+        harness.output,
+        contains(contains('STOP_SENDING id=0 error=256')),
+      );
+    } finally {
+      await requestBody.close();
+      manager.close(force: true);
+      await harness.close();
+    }
+  }, timeout: const Timeout(Duration(seconds: 20)));
+
   test('cancels both directions of an HTTP/3 request stream', () async {
     final harness = await _InspectorHarness.start(const []);
     final requestBody = StreamController<Uint8List>();
