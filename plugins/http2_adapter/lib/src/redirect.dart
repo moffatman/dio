@@ -41,14 +41,16 @@ Future<ResponseBody> fetchFollowingRedirects({
   final visited = <String>{_redirectKey(current.method, current.uri)};
 
   while (true) {
-    final response = await fetchOne(
+    final response = await _fetchOne(
+      fetchOne,
       current,
       sendBody,
       cancelFuture,
+      redirects.isEmpty ? null : options,
     );
     final statusCode = response.statusCode;
     if (statusCode == null || !_redirectStatusCodes.contains(statusCode)) {
-      return _withRedirects(response, redirects);
+      return _withRedirects(response, redirects, options);
     }
 
     final location = _headerValue(
@@ -131,6 +133,48 @@ Future<ResponseBody> fetchFollowingRedirects({
   }
 }
 
+Future<ResponseBody> _fetchOne(
+  SingleRequestFetcher fetchOne,
+  RequestOptions current,
+  Stream<Uint8List>? requestStream,
+  Future? cancelFuture,
+  RequestOptions? original,
+) async {
+  try {
+    return await fetchOne(current, requestStream, cancelFuture);
+  } on DioError catch (error) {
+    if (original != null) {
+      _restoreOriginalRequestOptions(error, original);
+    }
+    rethrow;
+  }
+}
+
+void _restoreOriginalRequestOptions(
+  DioError error,
+  RequestOptions original,
+) {
+  error.requestOptions = original;
+  error.response?.requestOptions = original;
+}
+
+Stream<Uint8List> _restoreOriginalRequestOptionsInStream(
+  Stream<Uint8List> stream,
+  RequestOptions original,
+) {
+  return stream.transform(
+    StreamTransformer<Uint8List, Uint8List>.fromHandlers(
+      handleData: (data, sink) => sink.add(data),
+      handleError: (Object error, StackTrace stackTrace, sink) {
+        if (error is DioError) {
+          _restoreOriginalRequestOptions(error, original);
+        }
+        sink.addError(error, stackTrace);
+      },
+    ),
+  );
+}
+
 String _redirectKey(String method, Uri uri) {
   return '${method.toUpperCase()} ${uri.replace(fragment: '')}';
 }
@@ -187,10 +231,15 @@ Future<void> _cancelRedirectResponse(ResponseBody response) async {
 ResponseBody _withRedirects(
   ResponseBody response,
   List<RedirectRecord> redirects,
+  RequestOptions original,
 ) {
   if (redirects.isEmpty) return response;
-  final result = ResponseBody(
+  final stream = _restoreOriginalRequestOptionsInStream(
     response.stream,
+    original,
+  );
+  final result = ResponseBody(
+    stream,
     response.statusCode,
     headers: response.headers,
     statusMessage: response.statusMessage,
