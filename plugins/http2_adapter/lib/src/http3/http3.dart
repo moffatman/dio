@@ -308,7 +308,7 @@ class QpackHeaderBlockEncoder {
 class QpackHeaderBlockDecoder {
   const QpackHeaderBlockDecoder();
 
-  Map<String, String> decodeHeaders(List<int> headerBlock) {
+  Map<String, List<String>> decodeHeaders(List<int> headerBlock) {
     final reader = _QuicReader(headerBlock);
     if (reader.remaining < 2) {
       throw const FormatException('Truncated QPACK field section prefix');
@@ -320,7 +320,10 @@ class QpackHeaderBlockDecoder {
       throw const FormatException('Dynamic QPACK tables are not supported');
     }
 
-    final headers = <String, String>{};
+    final headers = <String, List<String>>{};
+    void addHeader(String name, String value) {
+      (headers[name] ??= []).add(value);
+    }
     while (!reader.isDone) {
       final first = reader.readByte();
       if ((first & 0x80) != 0) {
@@ -330,7 +333,7 @@ class QpackHeaderBlockDecoder {
         }
         final index = _readPrefixedInteger(reader, first, 6);
         final entry = _staticEntry(index);
-        headers[entry.name] = entry.value;
+        addHeader(entry.name, entry.value);
         continue;
       }
       if ((first & 0xc0) == 0x40) {
@@ -340,7 +343,7 @@ class QpackHeaderBlockDecoder {
         }
         final nameIndex = _readPrefixedInteger(reader, first, 4);
         final name = _staticEntry(nameIndex).name;
-        headers[name] = _readString(reader, reader.readByte(), 7);
+        addHeader(name, _readString(reader, reader.readByte(), 7));
         continue;
       }
       if ((first & 0xe0) != 0x20) {
@@ -356,7 +359,7 @@ class QpackHeaderBlockDecoder {
 
       final valueFirst = reader.readByte();
       final value = _readString(reader, valueFirst, 7);
-      headers[name] = value;
+      addHeader(name, value);
     }
     return headers;
   }

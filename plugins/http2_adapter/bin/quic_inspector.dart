@@ -2959,8 +2959,19 @@ class _QuicInspectorConnection {
 
     // Deliver the blocked field section first. The client can only decode its
     // dynamic server header after it processes the encoder stream below.
-    final response = BytesBuilder(copy: false)
-      ..add([0x01, 0x04, 0x02, 0x00, 0xd9, 0x80]);
+    final headerBlock = BytesBuilder(copy: false)
+      ..add([0x02, 0x00, 0xd9, 0x80]);
+    for (final cookie in const ['a=1; Path=/', 'b=2; HttpOnly']) {
+      final value = utf8.encode(cookie);
+      // Literal field line with a static name reference to set-cookie (14).
+      headerBlock
+        ..add([0x7e, value.length])
+        ..add(value);
+    }
+    final encodedHeaderBlock = headerBlock.takeBytes();
+    final response = BytesBuilder(copy: false)..addByte(0x01);
+    _appendVarInt(response, encodedHeaderBlock.length);
+    response.add(encodedHeaderBlock);
     final body = Uint8List.fromList(utf8.encode('dynamic-qpack'));
     response.addByte(0x00);
     _appendVarInt(response, body.length);

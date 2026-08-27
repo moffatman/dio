@@ -642,7 +642,11 @@ class _DatagramHttp3ClientConnection implements Http3ClientConnection {
                   stream.id,
                   frame.headerBlock,
                 );
-                headers.forEach(responseHeaders.add);
+                headers.forEach((name, values) {
+                  for (final value in values) {
+                    responseHeaders.add(name, value);
+                  }
+                });
                 final status = responseHeaders.value(':status');
                 if (status != null && !responseReady.isCompleted) {
                   statusCode = int.parse(status);
@@ -926,7 +930,7 @@ class _DatagramQuicTransport {
     ).encode();
   }
 
-  Future<Map<String, String>> decodeResponseHeaders(
+  Future<Map<String, List<String>>> decodeResponseHeaders(
     int streamId,
     List<int> headerBlock,
   ) {

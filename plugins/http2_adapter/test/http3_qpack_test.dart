@@ -32,8 +32,8 @@ void main() {
     ]);
 
     expect(await decoded, {
-      ':authority': 'www.example.com',
-      ':path': '/sample/path',
+      ':authority': ['www.example.com'],
+      ':path': ['/sample/path'],
     });
     expect(decoder.insertCount, 2);
     expect(decoderInstructions, [0x02, 0x84]);
@@ -60,7 +60,7 @@ void main() {
     decoder.addEncoderStreamData(encoderInstructions);
 
     expect(await decoder.decodeHeaders(0, block), {
-      'custom-key': 'custom-value',
+      'custom-key': ['custom-value'],
     });
     expect(decoderInstructions, [0x01, 0x80]);
 
@@ -131,9 +131,9 @@ void main() {
     ]);
 
     expect(await decoder.decodeHeaders(8, [0x05, 0x00, 0x80, 0xc1, 0x81]), {
-      ':authority': 'www.example.com',
-      ':path': '/',
-      'custom-key': 'custom-value',
+      ':authority': ['www.example.com'],
+      ':path': ['/'],
+      'custom-key': ['custom-value'],
     });
     expect(decoder.insertCount, 4);
     expect(decoderInstructions, [0x02, 0x02, 0x88]);
@@ -168,6 +168,26 @@ void main() {
       0x0c,
       ...'/sample/path'.codeUnits,
     ]);
-    expect((await first)[':authority'], 'www.example.com');
+    expect((await first)[':authority'], ['www.example.com']);
+  });
+
+  test('preserves repeated response field values', () async {
+    final decoder = QpackDecoder(
+      maximumTableCapacity: 0,
+      maximumBlockedStreams: 0,
+    );
+
+    final headers = await decoder.decodeHeaders(0, [
+      0x00,
+      0x00,
+      0x7e,
+      0x03,
+      ...'a=1'.codeUnits,
+      0x7e,
+      0x03,
+      ...'b=2'.codeUnits,
+    ]);
+
+    expect(headers['set-cookie'], ['a=1', 'b=2']);
   });
 }

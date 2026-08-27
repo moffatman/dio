@@ -28,6 +28,10 @@ void main() {
       );
       expect(response.statusCode, 200);
       expect(response.headers.value('server'), 'qpack-inspector');
+      expect(response.headers['set-cookie'], [
+        'a=1; Path=/',
+        'b=2; HttpOnly',
+      ]);
       expect(
         utf8.decode(response.data!),
         'dynamic-qpack',

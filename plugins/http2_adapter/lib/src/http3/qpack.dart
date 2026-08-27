@@ -37,7 +37,7 @@ class QpackDecoder {
 
   int get insertCount => _table.insertCount;
 
-  Future<Map<String, String>> decodeHeaders(
+  Future<Map<String, List<String>>> decodeHeaders(
     int streamId,
     List<int> headerBlock,
   ) {
@@ -45,7 +45,7 @@ class QpackDecoder {
       final bytes = Uint8List.fromList(headerBlock);
       final prefix = _decodeFieldSectionPrefix(bytes);
       if (prefix.requiredInsertCount <= _table.insertCount) {
-        return Future<Map<String, String>>.value(
+        return Future<Map<String, List<String>>>.value(
           _decodeFieldSection(streamId, bytes, prefix),
         );
       }
@@ -58,7 +58,7 @@ class QpackDecoder {
           'Peer exceeded SETTINGS_QPACK_BLOCKED_STREAMS',
         );
       }
-      final completer = Completer<Map<String, String>>();
+      final completer = Completer<Map<String, List<String>>>();
       _blocked.add(_QpackBlockedFieldSection(
         streamId: streamId,
         bytes: bytes,
@@ -67,9 +67,9 @@ class QpackDecoder {
       ));
       return completer.future;
     } on QpackException catch (error, stackTrace) {
-      return Future<Map<String, String>>.error(error, stackTrace);
+      return Future<Map<String, List<String>>>.error(error, stackTrace);
     } on Object catch (error) {
-      return Future<Map<String, String>>.error(
+      return Future<Map<String, List<String>>>.error(
         QpackException(QpackErrorCode.decompressionFailed, '$error'),
       );
     }
@@ -226,15 +226,19 @@ class QpackDecoder {
     return requiredInsertCount;
   }
 
-  Map<String, String> _decodeFieldSection(
+  Map<String, List<String>> _decodeFieldSection(
     int streamId,
     Uint8List bytes,
     _QpackFieldSectionPrefix prefix,
   ) {
     try {
       final reader = _QuicReader(bytes)..offset = prefix.length;
-      final headers = <String, String>{};
+      final headers = <String, List<String>>{};
       var largestReference = -1;
+
+      void addHeader(String name, String value) {
+        (headers[name] ??= []).add(value);
+      }
 
       _QpackDynamicEntry dynamicEntry(int absoluteIndex) {
         if (absoluteIndex < 0 || absoluteIndex >= prefix.requiredInsertCount) {
@@ -252,17 +256,17 @@ class QpackDecoder {
           final index = _readQpackPrefixedIntegerFromReader(reader, first, 6);
           if (first & 0x40 != 0) {
             final entry = _qpackStaticEntry(index);
-            headers[entry.name] = entry.value;
+            addHeader(entry.name, entry.value);
           } else {
             final entry = dynamicEntry(prefix.base - index - 1);
-            headers[entry.name] = entry.value;
+            addHeader(entry.name, entry.value);
           }
           continue;
         }
         if (first & 0xf0 == 0x10) {
           final index = _readQpackPrefixedIntegerFromReader(reader, first, 4);
           final entry = dynamicEntry(prefix.base + index);
-          headers[entry.name] = entry.value;
+          addHeader(entry.name, entry.value);
           continue;
         }
         if (first & 0xc0 == 0x40) {
@@ -270,13 +274,13 @@ class QpackDecoder {
           final name = first & 0x10 != 0
               ? _qpackStaticEntry(index).name
               : dynamicEntry(prefix.base - index - 1).name;
-          headers[name] = _readQpackStringFromReader(reader, 7);
+          addHeader(name, _readQpackStringFromReader(reader, 7));
           continue;
         }
         if (first & 0xf0 == 0x00) {
           final index = _readQpackPrefixedIntegerFromReader(reader, first, 3);
           final name = dynamicEntry(prefix.base + index).name;
-          headers[name] = _readQpackStringFromReader(reader, 7);
+          addHeader(name, _readQpackStringFromReader(reader, 7));
           continue;
         }
         if (first & 0xe0 == 0x20) {
@@ -287,7 +291,7 @@ class QpackDecoder {
           final name = ascii.decode(
             huffman ? huffmanDecode(encodedName) : encodedName,
           );
-          headers[name] = _readQpackStringFromReader(reader, 7);
+          addHeader(name, _readQpackStringFromReader(reader, 7));
           continue;
         }
         throw FormatException(
@@ -725,7 +729,7 @@ class _QpackBlockedFieldSection {
   final int streamId;
   final Uint8List bytes;
   final _QpackFieldSectionPrefix prefix;
-  final Completer<Map<String, String>> completer;
+  final Completer<Map<String, List<String>>> completer;
 }
 
 class _QpackOutstandingSection {

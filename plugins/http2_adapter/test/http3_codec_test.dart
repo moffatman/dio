@@ -66,8 +66,8 @@ void main() {
       expect(headerBlock, isA<Uint8List>());
       final headers =
           const QpackHeaderBlockDecoder().decodeHeaders(headerBlock);
-      expect(headers[':method'], 'GET');
-      expect(headers[':path'], '/search?q=dart');
+      expect(headers[':method'], ['GET']);
+      expect(headers[':path'], ['/search?q=dart']);
     });
 
     test('decodes frames split across stream chunks', () {
