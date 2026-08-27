@@ -190,6 +190,52 @@ void main() {
     }
   }, timeout: const Timeout(Duration(seconds: 20)));
 
+  test('fails concurrent requests when the connection terminates', () async {
+    final harness = await _InspectorHarness.start(const [
+      '--max-idle-timeout',
+      '500',
+    ]);
+    final manager = Http3ConnectionManager(
+      preferHttp3WithoutAltSvc: true,
+      onClientCreate: (_, settings) {
+        settings.onBadCertificate = (_) => true;
+      },
+    );
+    try {
+      final firstOptions = RequestOptions(
+        path: 'https://127.0.0.1:${harness.port}/first',
+        method: 'GET',
+      );
+      final secondOptions = RequestOptions(
+        path: 'https://127.0.0.1:${harness.port}/second',
+        method: 'GET',
+      );
+      final connection = await manager.getConnection(firstOptions);
+      expect(connection, isNotNull);
+
+      Matcher idleTimeout() => isA<Http3ConnectionTerminatedException>()
+          .having(
+            (error) => error.termination.type,
+            'type',
+            QuicConnectionTerminationType.idleTimeout,
+          );
+      final first = expectLater(
+        connection!.fetch(firstOptions, null, null),
+        throwsA(idleTimeout()),
+      );
+      final second = expectLater(
+        connection.fetch(secondOptions, null, null),
+        throwsA(idleTimeout()),
+      );
+
+      await Future.wait([first, second]);
+      expect(connection.canAcceptRequests, isFalse);
+    } finally {
+      manager.close(force: true);
+      await harness.close();
+    }
+  }, timeout: const Timeout(Duration(seconds: 20)));
+
   test('retransmits a local close during the QUIC closing period', () async {
     final harness = await _InspectorHarness.start(const [
       '--probe-client-close',

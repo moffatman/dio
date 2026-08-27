@@ -1361,13 +1361,14 @@ class _DatagramQuicTransport {
   void _closeAll() {
     if (_closed) return;
     _closed = true;
-    _qpackDecoder.failBlocked(StateError('HTTP/3 connection is closed'));
-    for (final stream in _streams.values) {
-      stream.terminate();
-    }
+    final streams = List<_DatagramQuicStream>.of(_streams.values);
     _streams.clear();
     _peerStreams.clear();
     _pendingWrites.clear();
+    _qpackDecoder.failBlocked(StateError('HTTP/3 connection is closed'));
+    for (final stream in streams) {
+      stream.terminate();
+    }
     _failStreamCapacity(StateError('HTTP/3 connection is closed'));
   }
 
@@ -1376,6 +1377,10 @@ class _DatagramQuicTransport {
     _closed = true;
     _terminalError = error;
     _terminalStackTrace = stackTrace;
+    final streams = List<_DatagramQuicStream>.of(_streams.values);
+    _streams.clear();
+    _peerStreams.clear();
+    _pendingWrites.clear();
     _qpackDecoder.failBlocked(error, stackTrace);
     final applicationError = switch (error) {
       QpackException() => error.errorCode,
@@ -1385,12 +1390,9 @@ class _DatagramQuicTransport {
     if (applicationError != null) {
       unawaited(_socket.close(errorCode: applicationError, reason: '$error'));
     }
-    for (final stream in _streams.values) {
+    for (final stream in streams) {
       stream.fail(error, stackTrace);
     }
-    _streams.clear();
-    _peerStreams.clear();
-    _pendingWrites.clear();
     _failStreamCapacity(error, stackTrace);
   }
 }
